@@ -7,37 +7,54 @@ import {
 } from '@nestjs/microservices';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CreateIssueDto } from './dto/create-issue.dto';
-import { IssueService } from './issue/issue.service';
-import { GithubClientError } from './github.errors';
-import { IssueResultProducer } from './kafka/issue-result.producer';
+import { GithubClientError } from '../github.errors';
+import { PullRequestActionDto } from './dto/pull-request-action.dto';
+import { PullRequestResultProducer } from './kafka/pull-request-result.producer';
+import { PullRequestService } from './pull-request.service';
 
 @Controller()
-export class GithubController {
-  private readonly logger = new Logger(GithubController.name);
+export class PullRequestController {
+  private readonly logger = new Logger(PullRequestController.name);
   private readonly exitProcess = (code: number): never => process.exit(code);
 
   constructor(
-    private readonly issueService: IssueService,
-    private readonly issueResultProducer: IssueResultProducer,
+    private readonly pullRequestService: PullRequestService,
+    private readonly resultProducer: PullRequestResultProducer,
   ) {}
 
-  @EventPattern('github.issue.create')
-  async handleIssueCreate(
+  @EventPattern('github.pr.merge')
+  async handleMerge(
     @Payload() data: unknown,
     @Ctx() context: KafkaContext,
   ): Promise<void> {
-    const shouldCommit = await this.processMessage(data);
+    const shouldCommit = await this.processMessage(data, 'merge');
     if (shouldCommit) await this.commitOffset(context);
   }
 
-  private async processMessage(data: unknown): Promise<boolean> {
+  @EventPattern('github.pr.approve')
+  async handleApprove(
+    @Payload() data: unknown,
+    @Ctx() context: KafkaContext,
+  ): Promise<void> {
+    const shouldCommit = await this.processMessage(data, 'approve');
+    if (shouldCommit) await this.commitOffset(context);
+  }
+
+  private async processMessage(
+    data: unknown,
+    action: 'merge' | 'approve',
+  ): Promise<boolean> {
+    const resultTopic =
+      action === 'merge'
+        ? 'github.pr.merge.result'
+        : 'github.pr.approve.result';
+
     if (data === null || typeof data !== 'object') {
       this.logger.error('Invalid payload type, skipping message');
       return true;
     }
 
-    const dto = plainToInstance(CreateIssueDto, data);
+    const dto = plainToInstance(PullRequestActionDto, data);
     const errors = await validate(dto, { whitelist: true });
 
     if (errors.length > 0) {
@@ -45,25 +62,30 @@ export class GithubController {
         errors: errors.map((e) => e.toString()),
       });
       if (dto.channelId != null && dto.teamId != null) {
-        await this.issueResultProducer.send({
+        await this.resultProducer.send(resultTopic, {
           channelId: dto.channelId,
           teamId: dto.teamId,
           success: false,
-          error: '잘못된 이슈 생성 요청입니다.',
+          prNumber: dto.prNumber,
+          error: '잘못된 요청입니다.',
         });
       }
       return true;
     }
 
     try {
-      const result = await this.issueService.createIssue(dto);
+      const result =
+        action === 'merge'
+          ? await this.pullRequestService.mergePullRequest(dto)
+          : await this.pullRequestService.approvePullRequest(dto);
+
       if (dto.channelId != null && dto.teamId != null) {
-        await this.issueResultProducer.send({
+        await this.resultProducer.send(resultTopic, {
           channelId: dto.channelId,
           teamId: dto.teamId,
           success: true,
-          issueUrl: result.issueUrl,
-          issueNumber: result.issueNumber,
+          prNumber: result.prNumber,
+          prUrl: result.prUrl,
         });
       }
       return true;
@@ -72,24 +94,26 @@ export class GithubController {
         this.logger.error('GitHub client error, skipping message', {
           owner: dto.owner,
           repo: dto.repo,
-          title: dto.title,
+          prNumber: dto.prNumber,
           statusCode: error.statusCode,
           message: error.message,
         });
         if (dto.channelId != null && dto.teamId != null) {
-          await this.issueResultProducer.send({
+          await this.resultProducer.send(resultTopic, {
             channelId: dto.channelId,
             teamId: dto.teamId,
             success: false,
+            prNumber: dto.prNumber,
             error: error.message,
           });
         }
         return true;
       }
+
       this.logger.error('GitHub server error, consumer will stop for retry', {
         owner: dto.owner,
         repo: dto.repo,
-        title: dto.title,
+        prNumber: dto.prNumber,
         message: (error as Error).message,
       });
 
