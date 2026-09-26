@@ -3,27 +3,20 @@ import {
   Get,
   HttpException,
   Param,
-  ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
 import { InternalApiKeyGuard } from '../common/guards/internal-api-key.guard';
 import { GithubClientError } from '../github.errors';
-import { IssueHttpService } from './issue-http.service';
+import { LabelHttpService } from './label-http.service';
 
-@Controller('api/repos/:owner/:repo/issues/comments/:commentId')
+@Controller('api/repos/:owner/:repo/labels')
 @UseGuards(InternalApiKeyGuard)
-export class CommentHttpController {
-  constructor(private readonly issueHttpService: IssueHttpService) {}
+export class LabelHttpController {
+  constructor(private readonly labelHttpService: LabelHttpService) {}
 
   @Get()
-  async getDetail(
-    @Param('owner') owner: string,
-    @Param('repo') repo: string,
-    @Param('commentId', ParseIntPipe) commentId: number,
-  ) {
-    return this.handle(() =>
-      this.issueHttpService.getComment(owner, repo, commentId),
-    );
+  async list(@Param('owner') owner: string, @Param('repo') repo: string) {
+    return this.handle(() => this.labelHttpService.listLabels(owner, repo));
   }
 
   private async handle<T>(fn: () => Promise<T>): Promise<T> {
