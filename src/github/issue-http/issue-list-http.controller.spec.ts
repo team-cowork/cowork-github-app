@@ -1,43 +1,35 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpException } from '@nestjs/common';
-import { PullRequestListHttpController } from './pull-request-list-http.controller';
-import { PullRequestService } from './pull-request.service';
+import { IssueListHttpController } from './issue-list-http.controller';
+import { IssueHttpService } from './issue-http.service';
 import { InternalApiKeyGuard } from '../common/guards/internal-api-key.guard';
 import { GithubClientError } from '../github.errors';
 
-describe('PullRequestListHttpController', () => {
-  let controller: PullRequestListHttpController;
-  let pullRequestService: {
-    listPullRequests: jest.Mock;
-  };
+describe('IssueListHttpController', () => {
+  let controller: IssueListHttpController;
+  let issueHttpService: { listIssues: jest.Mock };
 
   beforeEach(async () => {
-    pullRequestService = {
-      listPullRequests: jest.fn(),
-    };
+    issueHttpService = { listIssues: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [PullRequestListHttpController],
-      providers: [
-        { provide: PullRequestService, useValue: pullRequestService },
-      ],
+      controllers: [IssueListHttpController],
+      providers: [{ provide: IssueHttpService, useValue: issueHttpService }],
     })
       .overrideGuard(InternalApiKeyGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
-    controller = module.get<PullRequestListHttpController>(
-      PullRequestListHttpController,
-    );
+    controller = module.get<IssueListHttpController>(IssueListHttpController);
   });
 
-  it('PR 목록을 조회한다', async () => {
-    pullRequestService.listPullRequests.mockResolvedValue([{ number: 1 }]);
+  it('이슈 목록을 조회한다', async () => {
+    issueHttpService.listIssues.mockResolvedValue([{ number: 1 }]);
 
     const result = await controller.list('my-org', 'my-repo', 'all');
 
     expect(result).toEqual([{ number: 1 }]);
-    expect(pullRequestService.listPullRequests).toHaveBeenCalledWith(
+    expect(issueHttpService.listIssues).toHaveBeenCalledWith(
       'my-org',
       'my-repo',
       'all',
@@ -45,11 +37,11 @@ describe('PullRequestListHttpController', () => {
   });
 
   it('state 기본값은 open이다', async () => {
-    pullRequestService.listPullRequests.mockResolvedValue([]);
+    issueHttpService.listIssues.mockResolvedValue([]);
 
     await controller.list('my-org', 'my-repo');
 
-    expect(pullRequestService.listPullRequests).toHaveBeenCalledWith(
+    expect(issueHttpService.listIssues).toHaveBeenCalledWith(
       'my-org',
       'my-repo',
       'open',
@@ -57,7 +49,7 @@ describe('PullRequestListHttpController', () => {
   });
 
   it('GithubClientError는 동일한 statusCode의 HttpException으로 변환한다', async () => {
-    pullRequestService.listPullRequests.mockRejectedValue(
+    issueHttpService.listIssues.mockRejectedValue(
       new GithubClientError('저장소를 찾을 수 없습니다.', 404),
     );
 
@@ -70,9 +62,7 @@ describe('PullRequestListHttpController', () => {
   });
 
   it('알 수 없는 에러는 502로 변환한다', async () => {
-    pullRequestService.listPullRequests.mockRejectedValue(
-      new Error('network down'),
-    );
+    issueHttpService.listIssues.mockRejectedValue(new Error('network down'));
 
     let caught: unknown;
     try {

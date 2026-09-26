@@ -3,27 +3,20 @@ import {
   Get,
   HttpException,
   Param,
-  Query,
   UseGuards,
 } from '@nestjs/common';
-import { GithubClientError } from '../github.errors';
 import { InternalApiKeyGuard } from '../common/guards/internal-api-key.guard';
-import { PullRequestService } from './pull-request.service';
+import { GithubClientError } from '../github.errors';
+import { LabelHttpService } from './label-http.service';
 
-@Controller('api/repos/:owner/:repo/pulls')
+@Controller('api/repos/:owner/:repo/labels')
 @UseGuards(InternalApiKeyGuard)
-export class PullRequestListHttpController {
-  constructor(private readonly pullRequestService: PullRequestService) {}
+export class LabelHttpController {
+  constructor(private readonly labelHttpService: LabelHttpService) {}
 
   @Get()
-  async list(
-    @Param('owner') owner: string,
-    @Param('repo') repo: string,
-    @Query('state') state = 'open',
-  ) {
-    return this.handle(() =>
-      this.pullRequestService.listPullRequests(owner, repo, state),
-    );
+  async list(@Param('owner') owner: string, @Param('repo') repo: string) {
+    return this.handle(() => this.labelHttpService.listLabels(owner, repo));
   }
 
   private async handle<T>(fn: () => Promise<T>): Promise<T> {

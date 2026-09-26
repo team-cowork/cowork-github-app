@@ -6,14 +6,14 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { GithubClientError } from '../github.errors';
 import { InternalApiKeyGuard } from '../common/guards/internal-api-key.guard';
-import { PullRequestService } from './pull-request.service';
+import { GithubClientError } from '../github.errors';
+import { IssueHttpService } from './issue-http.service';
 
-@Controller('api/repos/:owner/:repo/pulls')
+@Controller('api/repos/:owner/:repo/issues')
 @UseGuards(InternalApiKeyGuard)
-export class PullRequestListHttpController {
-  constructor(private readonly pullRequestService: PullRequestService) {}
+export class IssueListHttpController {
+  constructor(private readonly issueHttpService: IssueHttpService) {}
 
   @Get()
   async list(
@@ -22,7 +22,7 @@ export class PullRequestListHttpController {
     @Query('state') state = 'open',
   ) {
     return this.handle(() =>
-      this.pullRequestService.listPullRequests(owner, repo, state),
+      this.issueHttpService.listIssues(owner, repo, state),
     );
   }
 
